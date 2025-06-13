@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -10,7 +11,7 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 
 // Connect to MongoDB Atlas
-const MONGO_URL = "mongodb+srv://ifscuser:77dhHJYbinAsOSoq@ifsc-cluster.fpc72g6.mongodb.net/?retryWrites=true&w=majority&appName=ifsc-cluster"; // <-- Replace with your connection string
+const MONGO_URL = process.env.MONGO_URL; // <-- Replace with your connection string
 mongoose.connect(MONGO_URL, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log('MongoDB connected'))
   .catch(err => console.error('MongoDB connection error:', err));
