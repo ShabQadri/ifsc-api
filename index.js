@@ -1,60 +1,80 @@
-const express = require("express");
-const fs = require("fs");
-const csv = require("csv-parser");
-const cors = require("cors");
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+const Branch = require('./Branch');
 
 const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Enable CORS for all routes
 app.use(cors());
 
-let ifscData = [];
+// Connect to MongoDB Atlas
+const MONGO_URL = mongodb+srv://ifscuser:77dhHJYbinAsOSoq@ifsc-cluster.fpc72g6.mongodb.net/?retryWrites=true&w=majority&appName=ifsc-cluster; // <-- Replace with your connection string
+mongoose.connect(MONGO_URL, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log('MongoDB connected'))
+  .catch(err => console.error('MongoDB connection error:', err));
 
-fs.createReadStream("IFSC.csv")
-  .pipe(csv())
-  .on("data", (row) => {
-    Object.keys(row).forEach(
-      (key) => (row[key] = (row[key] || "").trim())
-    );
-    ifscData.push(row);
-  })
-  .on("end", () => {
-    console.log(`Loaded ${ifscData.length} IFSC records!`);
-  });
-
-app.get("/", (req, res) => {
-  res.send("IFSC API is running!");
-});
-
-app.get("/api/search", (req, res) => {
-  const { bank, state, branch, ifsc, q } = req.query;
-  let results = ifscData;
-
-  if (q) {
-    const qLower = q.toLowerCase();
-    results = results.filter(
-      (row) =>
-        row.BANK.toLowerCase().includes(qLower) ||
-        row.BRANCH.toLowerCase().includes(qLower) ||
-        row.IFSC.toLowerCase().includes(qLower) ||
-        row.CITY.toLowerCase().includes(qLower) ||
-        row.STATE.toLowerCase().includes(qLower)
-    );
+// Endpoint: Get all unique banks
+app.get('/api/banks', async (req, res) => {
+  try {
+    const banks = await Branch.distinct('BANK');
+    res.json(banks.sort());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-  if (bank) results = results.filter(r => r.BANK.toLowerCase().includes(bank.toLowerCase()));
-  if (state) results = results.filter(r => r.STATE.toLowerCase().includes(state.toLowerCase()));
-  if (branch) results = results.filter(r => r.BRANCH.toLowerCase().includes(branch.toLowerCase()));
-  if (ifsc) results = results.filter(r => r.IFSC.toLowerCase() === ifsc.toLowerCase());
-
-  res.json(results.slice(0, 50));
 });
 
-app.get("/api/ifsc/:ifsc", (req, res) => {
-  const code = req.params.ifsc.toUpperCase();
-  const found = ifscData.find(r => r.IFSC === code);
-  if (found) res.json(found);
-  else res.status(404).json({ error: "IFSC code not found" });
+// Endpoint: Get states for selected bank
+app.get('/api/states', async (req, res) => {
+  const { bank } = req.query;
+  if (!bank) return res.status(400).json({ error: 'bank required' });
+  try {
+    const states = await Branch.distinct('STATE', { BANK: bank });
+    res.json(states.sort());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-const PORT = process.env.PORT || 3000;
+// Endpoint: Get cities for selected bank and state
+app.get('/api/cities', async (req, res) => {
+  const { bank, state } = req.query;
+  if (!bank || !state) return res.status(400).json({ error: 'bank and state required' });
+  try {
+    const cities = await Branch.distinct('CITY', { BANK: bank, STATE: state });
+    res.json(cities.sort());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Endpoint: Get branches for selected bank, state, and city
+app.get('/api/branches', async (req, res) => {
+  const { bank, state, city } = req.query;
+  if (!bank || !state || !city) return res.status(400).json({ error: 'bank, state, and city required' });
+  try {
+    const branches = await Branch.find(
+      { BANK: bank, STATE: state, CITY: city },
+      { BRANCH: 1, IFSC: 1, _id: 0 }
+    ).sort({ BRANCH: 1 });
+    res.json(branches);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Endpoint: Get IFSC details (already present, but included for completeness)
+app.get('/api/ifsc/:ifsc', async (req, res) => {
+  try {
+    const branch = await Branch.findOne({ IFSC: req.params.ifsc });
+    if (!branch) return res.status(404).json({ error: 'Not found' });
+    res.json(branch);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => {
-  console.log("IFSC API running on port", PORT);
+  console.log(`Server running on port ${PORT}`);
 });
